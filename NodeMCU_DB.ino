@@ -1,8 +1,12 @@
+#include <LiquidCrystal.h>
 #include "DHT.h"
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
-#include <ESP8266WebServer.h>
+
+const int RS = D2, EN = D3, d4 = D5, d5 = D6, d6 = D7, d7 = D8;
+
+LiquidCrystal lcd(RS, EN, d4, d5, d6, d7);
 
 #define DHTPIN D1
 
@@ -10,25 +14,29 @@
 
 DHT dht(DHTPIN,DHTTYPE);
 
-
 float humedad;
 float temperatura;
 
+int pinMQ135 = A0;
 
-const char* ssid = "SSID";
-const char* password = "password";
-String server = "domain";//Servidor XAMPP
+float ppmCo2;
+double alcohol;
+
+const char* ssid = "facebooker212 V2 2.4Ghz";
+const char* password = "zk2%jp3^as5@ci6#";
+String server = "192.168.1.68";//Servidor XAMPP
 
 
 WiFiClient client;
 
 HTTPClient http;
 
-ESP8266WebServer serverNodeMCU(80);
-
 void setup()
 {
  Serial.begin(115200);
+  lcd.begin(16,2);
+  lcd.setCursor(0,0);
+  lcd.print("Reto IoT");
   delay(10);
   dht.begin();
   Serial.println();
@@ -53,63 +61,33 @@ void setup()
   Serial.println(WiFi.softAPmacAddress());
   delay(1000);
   
-  serverNodeMCU.on("/", handle_OnConnect);
-  serverNodeMCU.onNotFound(handle_NotFound);
-
-  serverNodeMCU.begin();
-
-  Serial.println("Servidor listo");
-  
   Serial.println("Conectando a XAMPP...");
  }
 void loop()
-{ 
+{   
   humedad = dht.readHumidity();
-  temperatura = dht.readTemperature(); 
-  sendingData();
-  serverNodeMCU.handleClient();
+  temperatura = dht.readTemperature();
+  float ppmCo2 = analogRead(pinMQ135);
+  float voltaje = ppmCo2 * (5.0 / 1023.0);
+  float Rs = 1000 * ((5 - voltaje) / voltaje);
+  double alcohol = 0.4091 * pow(Rs / 5463, -1.497);
+  sendingData(ppmCo2, alcohol);
+  lcd.begin(16,2);
+  lcd.setCursor(0,0);
+  lcd.print("Temp:" + String(int(temperatura)) + " Hum:" + String(int(humedad)));
+  lcd.setCursor(0,1);
+  lcd.print("CO2:" + String(int(ppmCo2)) + " A:" + String(alcohol));
   delay(1000);
  }
 
-void sendingData() {
-  String url = "http://" + server + "/phpmyadmin/dht11.php?humidity=" + String(humedad) + "&temperature=" + String(temperatura);
+void sendingData(float ppmCo2, double alcohol) {
+  String url = "http://" + server + "/retoiot/datos.php?Temperatura="
+  + String(temperatura) + "&Humedad=" + String(humedad) + "&CO2=" +
+  String(ppmCo2) + "&Alcohol=" + String(alcohol);
   http.begin(client, url);
   int httpCode = http.GET();
   Serial.println(url);
+  Serial.println(httpCode);
   http.end();
   delay(10000);
-}
-
-void handle_OnConnect() {
-  serverNodeMCU.send(200, "text/html", SendHTML(temperatura, humedad)); 
-}
-
-void handle_NotFound(){
-  serverNodeMCU.send(404, "text/plain", "Not found");
-}
-
-String SendHTML(float temperatura, float humedad){
-  String ptr = "<!DOCTYPE html> <html>\n";
-  ptr +="<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
-  ptr +="<title>Estacion de temperatura NodeMCU</title>\n";
-  ptr +="<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
-  ptr +="body{margin-top: 50px; background-color: black;} h1 {color: #FFFFFF;margin: 50px auto 30px;}\n";
-  ptr +="p {font-size: 24px;color: #FFFFFF;margin-bottom: 10px;}\n";
-  ptr +="</style>\n";
-  ptr +="</head>\n";
-  ptr +="<body>\n";
-  ptr +="<div id=\"webpage\">\n";
-  ptr +="<h1>Estacion de temperatura NodeMCU</h1>\n";
-  
-  ptr +="<p>Temperatura: ";
-  ptr +=(float)temperatura;
-  ptr +="°C</p>";
-  ptr +="<p>Humedad: ";
-  ptr +=(float)humedad;
-  ptr +="%</p>";
-  
-  ptr +="</div>\n";
-  ptr +="</body>\n";
-  ptr +="</html>\n";
-  return ptr;
 }
